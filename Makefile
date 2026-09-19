@@ -86,7 +86,7 @@ C3_PARTITIONS := $(C3_BUILD_DIR)/$(PROJECT_NAME).ino.partitions.bin
 C3_MERGED := $(C3_BUILD_DIR)/$(PROJECT_NAME).c3.merged.bin
 ESP8266_APP := $(ESP8266_BUILD_DIR)/output/esp8266-arduino.ino.bin
 ESP8266_LITTLEFS_IMAGE := $(ESP8266_BUILD_DIR)/esp8266-arduino.littlefs.bin
-ESP8266_MERGED := $(ESP8266_BUILD_DIR)/esp8266-arduino.8266.merged.bin
+ESP8266_MERGED := $(ESP8266_BUILD_DIR)/esp8266-arduino.esp12f.merged.bin
 ESP8266_FLASH_SIZE := 4194304
 ESP8266_LITTLEFS_SIZE := 0x2FA000
 ESP8266_LITTLEFS_OFFSET := 0x100000
@@ -147,7 +147,7 @@ check-littlefs: check-data
 	@test -x "$(LITTLEFS_TOOL)" || { echo "Error: mklittlefs was not found" >&2; exit 1; }
 
 check: check-littlefs
-	@command -v arduino-cli >/dev/null
+	@command -v $(ARDUINO_CLI) >/dev/null
 	command -v openssl >/dev/null
 	command -v python3 >/dev/null
 	test -d "$(CORE_DIR)" || { echo "Error: esp32:esp32@$(CORE_VERSION) is not installed" >&2; exit 1; }
@@ -156,7 +156,7 @@ check: check-littlefs
 	test -f "$(PROJECT_DIR)/$(PROJECT_NAME).ino"
 
 check-8266: check-data
-	@command -v arduino-cli >/dev/null
+	@command -v $(ARDUINO_CLI) >/dev/null
 	command -v python3 >/dev/null
 	test -d "$(ESP8266_CORE_DIR)" || { echo "Error: esp8266:esp8266@$(ESP8266_CORE_VERSION) is not installed" >&2; exit 1; }
 	test -f "$(ESP8266_ESPTOOL)" || { echo "Error: ESP8266 esptool was not found" >&2; exit 1; }
@@ -199,6 +199,7 @@ $(PICO_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/
 	cp "$(PROJECT_DIR)/partitions.csv" "$(PICO_SKETCH_DIR)/"
 	$(ARDUINO_CLI) compile \
 	    --fqbn "$(PICO_FQBN)" \
+	    --build-property "compiler.cpp.extra_flags=-DLED_PIN=10 -DLED_ON_LEVEL=HIGH" \
 	    --output-dir "$(PICO_BUILD_DIR)" \
 	    --build-property "build.partitions=partitions" \
 	    --build-property "build.filesystem=littlefs" \
@@ -213,6 +214,7 @@ $(S2_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/pa
 	cp "$(PROJECT_DIR)/partitions.csv" "$(S2_SKETCH_DIR)/"
 	$(ARDUINO_CLI) compile \
 	    --fqbn "$(S2_FQBN)" \
+	    --build-property "compiler.cpp.extra_flags=-DLED_PIN=17" \
 	    --output-dir "$(S2_BUILD_DIR)" \
 	    --build-property "build.partitions=partitions" \
 	    --build-property "build.filesystem=littlefs" \
@@ -241,6 +243,7 @@ $(PICO_8M_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DI
 	cp "$(PROJECT_DIR)/partitions-8m.csv" "$(PICO_8M_SKETCH_DIR)/partitions.csv"
 	$(ARDUINO_CLI) compile \
 	    --fqbn "$(PICO_8M_FQBN)" \
+	    --build-property "compiler.cpp.extra_flags=-DLED_PIN=10" \
 	    --output-dir "$(PICO_8M_OUTPUT_DIR)" \
 	    --build-property "build.partitions=partitions" \
 	    --build-property "build.filesystem=littlefs" \

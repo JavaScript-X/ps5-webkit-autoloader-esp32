@@ -9,6 +9,15 @@
 #include "esp_idf_version.h"
 #include "server_certs.h"
 
+#ifdef LED_PIN
+#ifndef LED_ON_LEVEL
+#define LED_ON_LEVEL LOW
+#endif
+static const uint32_t LED_ACTIVITY_MS = 50;
+
+static uint32_t ledOffUntil = 0;
+#endif
+
 httpd_handle_t httpsServer = NULL;
 
 static const char *AP_SSID = "ESP32_PORTAL";
@@ -27,6 +36,23 @@ WebServer webServer(80);
 
 static const char *NO_CACHE_VALUE =
     "no-store, no-cache, must-revalidate, max-age=0";
+
+#ifdef LED_PIN
+static void ledActivity()
+{
+    digitalWrite(LED_PIN, LED_ON_LEVEL);
+    ledOffUntil = millis() + LED_ACTIVITY_MS;
+}
+
+static void ledUpdate()
+{
+    if (ledOffUntil && (int32_t)(millis() - ledOffUntil) >= 0)
+    {
+        digitalWrite(LED_PIN, !LED_ON_LEVEL);
+        ledOffUntil = 0;
+    }
+}
+#endif
 
 static void setHttpsNoCacheHeaders(httpd_req_t *req)
 {
@@ -54,6 +80,10 @@ static void logHeap(const char *context)
 
 static void logHttpRequest()
 {
+#ifdef LED_PIN
+    ledActivity();
+#endif
+
     const char *method = webServer.method() == HTTP_GET ? "GET" :
                          webServer.method() == HTTP_POST ? "POST" : "OTHER";
 
@@ -700,6 +730,11 @@ void setupWebServer()
 
 void setup()
 {
+#ifdef LED_PIN
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, !LED_ON_LEVEL);
+#endif
+
     Serial.begin(115200);
 
     delay(1000);
@@ -782,6 +817,8 @@ void setup()
 
     Serial.println("Starting DNS");
 
+    dnsServer.setTTL(30);
+    dnsServer.setErrorReplyCode(DNSReplyCode::ServerFailure);
     bool dnsResult =
         dnsServer.start(
             53,
@@ -808,8 +845,10 @@ void setup()
 void loop()
 {
     dnsServer.processNextRequest();
-
     webServer.handleClient();
+#ifdef LED_PIN
+    ledUpdate();
+#endif
 
     delay(2);
 }
