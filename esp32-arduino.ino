@@ -7,6 +7,15 @@
 #include "esp_arduino_version.h"
 #include "esp_idf_version.h"
 
+#ifndef USB_DEBUG
+#define USB_DEBUG 0
+#endif
+
+#if !USB_DEBUG && (CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3)
+#include "soc/soc.h"
+#include "soc/usb_serial_jtag_reg.h"
+#endif
+
 #ifdef LED_PIN
 #ifndef LED_ON_LEVEL
 #define LED_ON_LEVEL LOW
@@ -399,6 +408,14 @@ void setupWebServer()
 
 void setup()
 {
+#if !USB_DEBUG && (CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3)
+    // Disconnect the fixed-function USB Serial/JTAG PHY after ROM startup.
+    CLEAR_PERI_REG_MASK(
+        USB_SERIAL_JTAG_CONF0_REG,
+        USB_SERIAL_JTAG_USB_PAD_ENABLE
+    );
+#endif
+
 #ifdef LED_PIN
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, !LED_ON_LEVEL);

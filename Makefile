@@ -43,10 +43,21 @@ PARTITION_TOOL := $(CORE_DIR)/tools/gen_esp32part.py
 LITTLEFS_TOOL := $(PROJECT_DIR)/mklittlefs/mklittlefs
 
 PICO_FQBN := esp32:esp32:esp32:CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=verbose,PSRAM=disabled
-S2_FQBN := esp32:esp32:esp32s2:CDCOnBoot=cdc,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=verbose,PSRAM=disabled
-S3_FQBN := esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=dio,FlashSize=4M,DebugLevel=verbose,PSRAM=disabled
+USB_DEBUG ?= 0
+ifeq ($(USB_DEBUG),1)
+S2_USB_OPTIONS := CDCOnBoot=cdc
+S3_USB_OPTIONS := USBMode=hwcdc,CDCOnBoot=cdc
+C3_USB_OPTIONS := CDCOnBoot=cdc
+else
+S2_USB_OPTIONS := CDCOnBoot=default
+S3_USB_OPTIONS := USBMode=default,CDCOnBoot=default
+C3_USB_OPTIONS := CDCOnBoot=default
+endif
+USB_DEBUG_FLAG := -DUSB_DEBUG=$(USB_DEBUG)
+S2_FQBN := esp32:esp32:esp32s2:$(S2_USB_OPTIONS),MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=verbose,PSRAM=disabled
+S3_FQBN := esp32:esp32:esp32s3:$(S3_USB_OPTIONS),MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=dio,FlashSize=4M,DebugLevel=verbose,PSRAM=disabled
 PICO_8M_FQBN := esp32:esp32:esp32:CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=8M,DebugLevel=verbose,PSRAM=disabled
-C3_FQBN := esp32:esp32:esp32c3:CDCOnBoot=cdc,CPUFreq=160,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=verbose
+C3_FQBN := esp32:esp32:esp32c3:$(C3_USB_OPTIONS),CPUFreq=160,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=verbose
 ESP8266_FQBN := esp8266:esp8266:generic:eesz=4M3M,FlashMode=dout,FlashFreq=40,xtal=80,CrystalFreq=26,baud=921600,ssl=all,mmu=3232,non32xfer=fast,vt=flash,exception=disabled,stacksmash=disabled,ip=lm2f,sdk=nonosdk_190703,lvl=None____,dbg=Disabled,wipe=none,led=2
 
 FLASH_SIZE := 4194304
@@ -87,12 +98,15 @@ ESP8266_FLASH_SIZE := 4194304
 ESP8266_LITTLEFS_SIZE := 0x2FA000
 ESP8266_LITTLEFS_OFFSET := 0x100000
 
-.PHONY: all pico pico-8m s2 s3 c3 8266 littlefs datadir minimize check check-minimize check-data check-littlefs check-8266 clean FORCE
+.PHONY: all debug pico pico-8m s2 s3 c3 8266 littlefs datadir minimize check check-minimize check-data check-littlefs check-8266 clean FORCE
 
 all: check $(PICO_MERGED) $(S2_MERGED) $(S3_MERGED) $(C3_MERGED)
 	@echo
 	echo "Build complete:"
 	ls -lh "$(PICO_MERGED)" "$(S2_MERGED)" $(S3_MERGED) $(C3_MERGED) "$(LITTLEFS_IMAGE)"
+
+debug:
+	@$(MAKE) USB_DEBUG=1 BUILD_DIR="$(PROJECT_DIR)/build/debug" all
 
 pico: check $(PICO_MERGED)
 	@ls -lh "$(PICO_MERGED)"
@@ -179,7 +193,7 @@ $(S2_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(PROJECT_DIR)/partitions.csv Make
 	cp "$(PROJECT_DIR)/partitions.csv" "$(S2_SKETCH_DIR)/"
 	$(ARDUINO_CLI) compile \
 	    --fqbn "$(S2_FQBN)" \
-	    --build-property "compiler.cpp.extra_flags=-DLED_PIN=17" \
+	    --build-property "compiler.cpp.extra_flags=-DLED_PIN=17 $(USB_DEBUG_FLAG)" \
 	    --output-dir "$(S2_BUILD_DIR)" \
 	    --build-property "build.partitions=partitions" \
 	    --build-property "build.filesystem=littlefs" \
@@ -194,6 +208,7 @@ $(S3_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(PROJECT_DIR)/partitions.csv Make
 	cp "$(PROJECT_DIR)/partitions.csv" "$(S3_SKETCH_DIR)/"
 	$(ARDUINO_CLI) compile \
 	    --fqbn "$(S3_FQBN)" \
+	    --build-property "compiler.cpp.extra_flags=$(USB_DEBUG_FLAG)" \
 	    --output-dir "$(S3_BUILD_DIR)" \
 	    --build-property "build.partitions=partitions" \
 	    --build-property "build.filesystem=littlefs" \
@@ -223,6 +238,7 @@ $(C3_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(PROJECT_DIR)/partitions.csv Make
 	cp "$(PROJECT_DIR)/partitions.csv" "$(C3_SKETCH_DIR)/"
 	$(ARDUINO_CLI) compile \
 	    --fqbn "$(C3_FQBN)" \
+	    --build-property "compiler.cpp.extra_flags=$(USB_DEBUG_FLAG)" \
 	    --output-dir "$(C3_BUILD_DIR)" \
 	    --build-property "build.partitions=partitions" \
 	    --build-property "build.filesystem=littlefs" \

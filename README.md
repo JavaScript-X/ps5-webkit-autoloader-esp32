@@ -36,6 +36,16 @@ Build all ESP32 targets:
 make
 ```
 
+The default ESP32-S2/S3/C3 firmware leaves native USB disconnected, so the
+board only draws power from its USB connection. Build the separate debug
+variant to enable USB CDC/Serial-JTAG output:
+
+```sh
+make debug
+```
+
+Debug firmware is written to `build/debug/`.
+
 Build an individual target:
 
 ```sh
