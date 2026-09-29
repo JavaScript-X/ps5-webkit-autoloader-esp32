@@ -1,14 +1,13 @@
 # ESP32 PS5 WebKit Autoloader
 
-A compact HTTP/HTTPS host for the PS5 WebKit Autoloader, packaged as 4 MB flash images for ESP32-PICO, ESP32-S2, and ESP-12F (ESP8266) boards. All targets use LittleFS and do not require PSRAM.
+A compact HTTP/HTTPS host for the PS5 WebKit Autoloader, packaged as 4 MB flash images for ESP32-PICO and ESP32-S2 boards. All targets use LittleFS and do not require PSRAM.
 
 The web content in `autoloader/` is based on a modified version of the [`ps5-webkit-autoloader`](https://github.com/itsPLK/ps5-webkit-autoloader) frontend. Its bundled [`slopkit`](https://github.com/itsPLK/slopkit), [`umtx2`](https://github.com/idlesauce/umtx2) and [`ps5-unified-autoloader`](https://github.com/owendswang/ps5-unified-autoloader/tree/feat/install-webkit-shortcut) components also contain project-specific modifications and therefore do not exactly match upstream.
 
 ## Firmware Version Supports
 
 - ~~umtx2        1.00 -  5.50~~ NOT SUPPORTED (`System out of memory` Error)
-- poopsploit   7.00 - 12.00
-- P2JB        12.00 - 12.70
+- relapse        7.00 - 13.60   (except 9.05 and 11.40)
 
 ## Usage
 
@@ -18,7 +17,9 @@ The web content in `autoloader/` is based on a modified version of the [`ps5-web
 4. Wait for the installation and caching process to finish. Do not disconnect the ESP32 while it is still running.
 5. On success, Payload Manager opens automatically and a **WebKit Autoloader** shortcut appears in the **Media** section of the home screen.
 
-After a successful installation, the web content is cached on the PS5 and the ESP32 is no longer required. On subsequent boots, launch **WebKit Autoloader** directly from the Media section.
+After a successful installation, the web content is cached on the PS5. On subsequent boots, launch **WebKit Autoloader** directly from the Media section.
+
+A network connection is still **REQUIRED** to complete the exploit process, as the exploit method relies on the PS5 having an active network interface and IP address. Internet access itself is not required.
 
 If an attempt fails, follow the on-screen instruction to reboot and try again. If the console freezes, crashes, or powers off, turn it back on and retry. Use this project at your own risk.
 
