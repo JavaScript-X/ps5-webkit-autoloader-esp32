@@ -1,6 +1,6 @@
 # ESP32 PS5 WebKit Autoloader
 
-A compact HTTP/HTTPS host for the PS5 WebKit Autoloader, packaged as 4 MB flash images for ESP32-PICO and ESP32-S2 boards. All targets use LittleFS and do not require PSRAM.
+A compact HTTP/HTTPS host for the PS5 WebKit Autoloader, packaged as 4 MB flash images for ESP32-PICO, ESP32-S2, ESP32-S3 and ESP32-C3 boards. All targets use LittleFS and do not require PSRAM.
 
 The web content in `autoloader/` is based on a modified version of the [`ps5-webkit-autoloader`](https://github.com/itsPLK/ps5-webkit-autoloader) frontend. Its bundled [`slopkit`](https://github.com/itsPLK/slopkit), [`umtx2`](https://github.com/idlesauce/umtx2) and [`ps5-unified-autoloader`](https://github.com/owendswang/ps5-unified-autoloader/tree/feat/install-webkit-shortcut) components also contain project-specific modifications and therefore do not exactly match upstream.
 
@@ -41,7 +41,7 @@ Install the Arduino CLI and required core:
 make
 ```
 
-The default ESP32-S2/S3/C3 firmware leaves native USB disconnected, so the
+The default ESP32-S2/S3/C3/PICO firmware leaves native USB disconnected, so the
 board only draws power from its USB connection. Build the separate debug
 variant to enable USB CDC/Serial-JTAG output:
 
@@ -55,8 +55,10 @@ The build copies `autoloader/` to a temporary `data/` directory, compresses the 
 
 - `build/pico/esp32-arduino.pico.merged.bin`: Intended to support generic ESP32-PICO series boards.
 - `build/s2/esp32-arduino.s2.merged.bin`: Intended to support ESP32-S2 series boards.
+- `build/s3/esp32-arduino.s3.merged.bin`: Intended to support ESP32-S3 series boards.
+- `build/c3/esp32-arduino.c3.merged.bin`: Intended to support ESP32-C3 series boards.
 
-Use `make pico`, `make s2`, `make 8266`, or `make clean` to build an individual target or clean generated files. The ESP-12F target uses the Generic ESP8266 4 MB / 3 MB LittleFS layout and produces `build/8266/esp8266-arduino.esp12f.merged.bin`.
+Use `make pico`, `make s2`, `make s3`, `make c3`~~, `make 8266`~~, or `make clean` to build an individual target or clean generated files. ~~The ESP-12F target uses the Generic ESP8266 4 MB / 3 MB LittleFS layout and produces `build/8266/esp8266-arduino.esp12f.merged.bin`.~~
 
 ## Credits
 
