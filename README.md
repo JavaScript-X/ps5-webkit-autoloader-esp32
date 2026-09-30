@@ -7,7 +7,10 @@ The web content in `autoloader/` is based on a modified version of the [`ps5-web
 ## Firmware Version Supports
 
 - ~~umtx2        1.00 -  5.50~~ NOT SUPPORTED (`System out of memory` Error)
+- lapse/poops        7.00 - 12.00
 - relapse        7.00 - 13.60   (except 9.05 and 11.40)
+
+You could choose to use lapse/poops or relapse if your FW supports both methods while caching.
 
 ## Usage
 

@@ -57,8 +57,8 @@
     (function () {
       'use strict';
 
-      var dir = '0.5.0';
-      var version = '0.5.0';
+      var dir = '0.5.1';
+      var version = '0.5.1';
       var statusEl = document.getElementById('status');
 
       function fail() {
@@ -71,13 +71,13 @@
          Only then point at the app. If the marker is missing, this fetch falls
          back to this very page (content mismatch) or errors - never redirect
          into a partially cached directory. */
-      fetch(dir + '/__complete__')
+      fetch('/app/' + dir + '/__complete__')
         .then(function (r) {
           return r.text();
         })
         .then(function (t) {
           if (t.trim() === version) {
-            window.location.replace(dir + '/index.html');
+            window.location.replace('/app/' + dir + '/index.html');
           } else {
             fail();
           }
