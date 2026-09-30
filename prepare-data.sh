@@ -101,7 +101,7 @@ else
         -name '*.js' -o \
         -name '*.elf' -o \
         -name '*.bin' -o \
-        -name 'cache.appcache' -o \
+        -name '*.appcache' -o \
         -name '*.svg' -o \
         -name '*.css' -o \
         -name 'version' -o \
