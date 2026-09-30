@@ -289,12 +289,17 @@
       var progressBar = document.getElementById('progressBar');
       var progressPct = document.getElementById('progressPct');
       var completed = false;
-      var chosenExploit = '';
+      var cacheReady = false;
+      var cacheError = false;
+      var choiceMade = false;
+      var pageRendered = false;
+      var jumpDeadline = 0;
+      var jumpTimer = null;
+      var JUMP_DELAY_MS = 5000;
       var fwParam = '';
 
       (function () {
         var params = new URLSearchParams(window.location.search);
-        chosenExploit = params.get('exploit') || '';
         fwParam = params.get('fw') || '';
       })();
 
@@ -306,16 +311,28 @@
       var fwNum = fw ? fw.num : (fwParam ? parseFloat(fwParam) : 0);
       var hasPoops = fwStr ? (POOPS_FIRMWARES.indexOf(fwStr) !== -1) : (fwNum >= 7.00 && fwNum <= 12.00);
       var hasRelapse = fwStr ? (RELAPSE_FIRMWARES.indexOf(fwStr) !== -1) : (fwNum >= 7.00 && fwNum <= 13.60);
-      var isDualSupported = (hasPoops && hasRelapse) || (!fw && !fwParam && !chosenExploit);
-      var needsChoice = isDualSupported && !chosenExploit;
+      var needsChoice = (hasPoops && hasRelapse) || (!fw && !fwParam);
+      var showJumpCountdown = needsChoice;
 
       function chooseExploit(choice) {
         try {
           localStorage.setItem('wkal_exploit', choice);
         } catch (e) { }
-        var p = new URLSearchParams(window.location.search);
-        p.set('exploit', choice);
-        window.location.replace(window.location.pathname + '?' + p.toString());
+        choiceMade = true;
+        needsChoice = false;
+        choiceContainer.hidden = true;
+        if (jumpTimer) {
+          clearInterval(jumpTimer);
+          jumpTimer = null;
+        }
+        if (cacheReady) {
+          finishJump();
+          return;
+        }
+        if (!cacheReady && !cacheError) {
+          setCaching();
+        }
+        startCaching();
       }
 
       if (btnPoops) {
@@ -359,38 +376,67 @@
         progressWrap.hidden = false;
       }
 
-      function goToAutoloader() {
-        if (completed) {
+      function finishJump() {
+        if (completed || cacheError) {
           return;
         }
         completed = true;
         window.location.replace(AUTOLOADER_URL);
       }
 
+      function updateJumpCountdown() {
+        var remaining = Math.ceil((jumpDeadline - Date.now()) / 1000);
+        if (remaining <= 0) {
+          clearInterval(jumpTimer);
+          jumpTimer = null;
+          finishJump();
+          return;
+        }
+        progressPct.textContent = 'Jumping in ' + remaining +
+          ' second' + (remaining === 1 ? '' : 's') + '...';
+      }
+
+      function scheduleAutoloader() {
+        if (!cacheReady || !pageRendered || cacheError || completed || jumpTimer) {
+          return;
+        }
+        statusEl.textContent = 'Cache ready';
+        detailEl.textContent = '';
+        setProgress(100);
+        if (!showJumpCountdown || choiceMade) {
+          finishJump();
+          return;
+        }
+        updateJumpCountdown();
+        if (!completed) {
+          jumpTimer = setInterval(updateJumpCountdown, 250);
+        }
+      }
+
+      function cacheComplete() {
+        if (cacheReady || cacheError) {
+          return;
+        }
+        cacheReady = true;
+        scheduleAutoloader();
+      }
+
       function cacheFailed() {
+        cacheError = true;
+        if (jumpTimer) {
+          clearInterval(jumpTimer);
+          jumpTimer = null;
+        }
+        choiceContainer.hidden = true;
         statusEl.textContent = 'Cache failed';
         detailEl.textContent = 'Keep the ESP network connected, then reload this page to try again.';
       }
 
-      window.addEventListener('load', function () {
-        if (needsChoice) {
-          statusEl.textContent = 'Select Exploit';
-          var fwDisplay = fw ? ('Firmware ' + fw.str) : (fwParam ? ('Firmware ' + fwParam) : 'Your firmware');
-          detailEl.textContent = '';
-          detailEl.appendChild(document.createTextNode(fwDisplay + ' supports both Poops and Relapse.'));
-          detailEl.appendChild(document.createElement('br'));
-          detailEl.appendChild(document.createTextNode('Select which one to install:'));
-          choiceContainer.hidden = false;
-          logContainer.hidden = true;
-          if (btnPoops) btnPoops.focus();
+      function startCaching() {
+        if (pageRendered) {
           return;
         }
-
-        if (chosenExploit) {
-          try {
-            localStorage.setItem('wkal_exploit', chosenExploit);
-          } catch (e) { }
-        } else if (hasPoops && !hasRelapse) {
+        if (hasPoops && !hasRelapse) {
           try {
             localStorage.setItem('wkal_exploit', 'poops');
           } catch (e) { }
@@ -404,18 +450,38 @@
           } catch (e) { }
         }
 
-        setCaching();
+        pageRendered = true;
+        if (cacheError) {
+          return;
+        }
+        if (needsChoice) {
+          progressWrap.hidden = false;
+        } else {
+          setCaching();
+        }
+        jumpDeadline = Date.now() + (showJumpCountdown ? JUMP_DELAY_MS : 0);
+        scheduleAutoloader();
 
         /* AppCache may already be current before the load handler runs. */
         var waitTimer = setInterval(function () {
-          if (completed) {
+          if (completed || cacheReady || cacheError) {
             clearInterval(waitTimer);
             return;
           }
-          if (window.applicationCache &&
-              window.applicationCache.status === window.applicationCache.IDLE) {
+          if (!window.applicationCache) {
+            return;
+          }
+          if (window.applicationCache.status === window.applicationCache.UPDATEREADY) {
             clearInterval(waitTimer);
-            goToAutoloader();
+            try {
+              window.applicationCache.swapCache();
+            } catch (e) { }
+            cacheComplete();
+            return;
+          }
+          if (window.applicationCache.status === window.applicationCache.IDLE) {
+            clearInterval(waitTimer);
+            cacheComplete();
           }
         }, 1000);
 
@@ -423,10 +489,29 @@
            install or exit: a partial cache must never create a shortcut, so the
            user simply re-runs the installer if this never completes. */
         setTimeout(function () {
-          if (!completed) {
+          if (!completed && !cacheError) {
             setSlow();
           }
         }, 120000);
+      }
+
+      window.addEventListener('load', function () {
+        if (cacheError) {
+          return;
+        }
+        if (needsChoice) {
+          statusEl.textContent = 'Select Exploit';
+          var fwDisplay = fw ? ('Firmware ' + fw.str) : (fwParam ? ('Firmware ' + fwParam) : 'Your firmware');
+          detailEl.textContent = '';
+          detailEl.appendChild(document.createTextNode(fwDisplay + ' supports both Poops and Relapse.'));
+          detailEl.appendChild(document.createElement('br'));
+          detailEl.appendChild(document.createTextNode('Select which one to install:'));
+          choiceContainer.hidden = false;
+          logContainer.hidden = true;
+          if (btnPoops) btnPoops.focus();
+        }
+
+        startCaching();
       });
 
 
@@ -455,11 +540,11 @@
         });
         window.applicationCache.addEventListener('cached', function() {
           appendLog("[AppCache] Caching complete.");
-          goToAutoloader();
+          cacheComplete();
         });
         window.applicationCache.addEventListener('noupdate', function() {
           appendLog("[AppCache] No update needed.");
-          goToAutoloader();
+          cacheComplete();
         });
         window.applicationCache.addEventListener('updateready', function () {
           if (window.applicationCache.status === window.applicationCache.UPDATEREADY) {
@@ -467,7 +552,7 @@
               window.applicationCache.swapCache();
             } catch (e) { }
           }
-          goToAutoloader();
+          cacheComplete();
         });
       }
     })();
