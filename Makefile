@@ -51,10 +51,12 @@ LITTLEFS_TOOL := $(PROJECT_DIR)/mklittlefs/mklittlefs
 
 USB_DEBUG ?= 0
 ifeq ($(USB_DEBUG),1)
+DEBUG_LEVEL := verbose
 S2_USB_OPTIONS := CDCOnBoot=cdc
 S3_USB_OPTIONS := USBMode=hwcdc,CDCOnBoot=cdc
 C3_USB_OPTIONS := CDCOnBoot=cdc
 else
+DEBUG_LEVEL := none
 S2_USB_OPTIONS := CDCOnBoot=default
 S3_USB_OPTIONS := USBMode=default,CDCOnBoot=default
 C3_USB_OPTIONS := CDCOnBoot=default
@@ -63,11 +65,11 @@ USB_DEBUG_FLAG := -DUSB_DEBUG=$(USB_DEBUG)
 ifeq ($(USB_DEBUG),1)
 S2_TLS_DEBUG_LINK := --build-property "compiler.c.elf.extra_flags=-Wl,--wrap=esp_tls_server_session_create"
 endif
-PICO_FQBN := esp32:esp32:esp32:CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=verbose,PSRAM=disabled
-S2_FQBN := esp32:esp32:esp32s2:$(S2_USB_OPTIONS),MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=verbose,PSRAM=disabled
-S3_FQBN := esp32:esp32:esp32s3:$(S3_USB_OPTIONS),MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=dio,FlashSize=4M,DebugLevel=verbose,PSRAM=disabled
-PICO_8M_FQBN := esp32:esp32:esp32:CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=8M,DebugLevel=verbose,PSRAM=disabled
-C3_FQBN := esp32:esp32:esp32c3:$(C3_USB_OPTIONS),CPUFreq=160,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=verbose
+PICO_FQBN := esp32:esp32:esp32:CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=$(DEBUG_LEVEL),PSRAM=disabled
+S2_FQBN := esp32:esp32:esp32s2:$(S2_USB_OPTIONS),MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=$(DEBUG_LEVEL),PSRAM=disabled
+S3_FQBN := esp32:esp32:esp32s3:$(S3_USB_OPTIONS),MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=dio,FlashSize=4M,DebugLevel=$(DEBUG_LEVEL),PSRAM=disabled
+PICO_8M_FQBN := esp32:esp32:esp32:CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=8M,DebugLevel=$(DEBUG_LEVEL),PSRAM=disabled
+C3_FQBN := esp32:esp32:esp32c3:$(C3_USB_OPTIONS),CPUFreq=160,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=$(DEBUG_LEVEL)
 ESP8266_FQBN := esp8266:esp8266:generic:eesz=4M3M,FlashMode=dout,FlashFreq=40,xtal=80,CrystalFreq=26,baud=921600,ssl=all,mmu=3232,non32xfer=fast,vt=flash,exception=disabled,stacksmash=disabled,ip=lm2f,sdk=nonosdk_190703,lvl=None____,dbg=Disabled,wipe=none,led=2
 
 FLASH_SIZE := 4194304

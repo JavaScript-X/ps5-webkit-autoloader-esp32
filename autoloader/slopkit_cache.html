@@ -479,10 +479,6 @@
               goToAutoloader();
               return;
             }
-            if (window.applicationCache.status === window.applicationCache.IDLE) {
-              clearInterval(waitTimer);
-              goToAutoloader();
-            }
           }, 1000);
 
           setTimeout(function () {
