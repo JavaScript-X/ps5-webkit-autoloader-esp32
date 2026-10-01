@@ -57,9 +57,71 @@
     (function () {
       'use strict';
 
-      var dir = '0.5.1';
-      var version = '0.5.1';
+      function detectFirmware() {
+        var m = /PlayStation 5\/(\d+\.\d+)/.exec(navigator.userAgent);
+        if (!m) return null;
+        return { str: m[1], num: parseFloat(m[1]) };
+      }
+
+      /* Firmware support definitions:
+         - <= 5.50: umtx2
+         - 7.00 - 12.00: poops
+         - 7.00 - 13.60 (except 9.05, 11.40): relapse */
+      function isUmtx2Supported(num) {
+        var n = typeof num === 'number' ? num : parseFloat(num);
+        return n > 0 && n <= 5.50;
+      }
+
+      function isPoopsSupported(num) {
+        var n = typeof num === 'number' ? num : parseFloat(num);
+        return n >= 7.00 && n <= 12.00;
+      }
+
+      function isRelapseSupported(num, str) {
+        var n = typeof num === 'number' ? num : parseFloat(num);
+        var s = str || (typeof num === 'string' ? num : '');
+        var isExcluded = (s === '9.05' || s === '11.40' ||
+                          Math.abs(n - 9.05) < 0.001 || Math.abs(n - 11.40) < 0.001);
+        return n >= 7.00 && n <= 13.60 && !isExcluded;
+      }
+
+      var dir = '0.5.2';
+      var version = '0.5.2';
       var statusEl = document.getElementById('status');
+      var params = new URLSearchParams(window.location.search);
+      var mode = params.get('force');
+
+      if (mode !== 'umtx2' && mode !== 'poops' && mode !== 'relapse') {
+        var fw = detectFirmware();
+        var fwStr = fw ? fw.str : '';
+        var fwNum = fw ? fw.num : 0;
+        var hasUmtx2 = isUmtx2Supported(fwNum);
+        var hasPoops = isPoopsSupported(fwNum);
+        var hasRelapse = isRelapseSupported(fwNum, fwStr);
+        if (hasUmtx2) {
+          mode = 'umtx2';
+        } else if (hasPoops && !hasRelapse) {
+          mode = 'poops';
+        } else if (hasPoops && hasRelapse) {
+          try {
+            mode = localStorage.getItem('wkal_exploit');
+          } catch (e) { }
+          if (mode !== 'poops' && mode !== 'relapse') mode = 'relapse';
+        } else if (hasRelapse) {
+          mode = 'relapse';
+        } else if (!fw) {
+          try {
+            mode = localStorage.getItem('wkal_exploit');
+          } catch (e) { }
+          if (mode !== 'poops' && mode !== 'relapse') mode = 'relapse';
+        } else {
+          statusEl.textContent = 'Unsupported firmware.';
+          statusEl.className = 'bad';
+          return;
+        }
+        window.location.replace('/app/index.html?force=' + mode);
+        return;
+      }
 
       function fail() {
         statusEl.textContent = 'Cache incomplete - run the installer again.';
@@ -69,15 +131,15 @@
       /* __complete__ is the LAST entry of the AppCache manifest, so if it is
          present (with our version content) every file before it was downloaded.
          Only then point at the app. If the marker is missing, this fetch falls
-         back to this very page (content mismatch) or errors - never redirect
-         into a partially cached directory. */
+         fail offline, and a content mismatch also prevents redirecting into
+         a partially cached directory. */
       fetch('/app/' + dir + '/__complete__')
         .then(function (r) {
           return r.text();
         })
         .then(function (t) {
           if (t.trim() === version) {
-            window.location.replace('/app/' + dir + '/index.html');
+            window.location.replace('/app/' + dir + '/index.html?force=' + mode);
           } else {
             fail();
           }

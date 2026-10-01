@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <title>WebKit Autoloader Installer v0.5.1 by PLK (built 2026-09-30 00:44:35 UTC)</title>
+  <title>WebKit Autoloader Installer v0.5.2 by PLK (built 2026-09-30 18:14:18 UTC)</title>
   <style>
     * {
       margin: 0;
@@ -276,6 +276,11 @@
       outline: none;
     }
 
+    .choice-card.selected {
+      border-color: rgba(56, 189, 248, 0.4);
+      background-color: rgba(56, 189, 248, 0.05);
+    }
+
     .choice-card:hover,
     .choice-card:focus {
       border-color: #38bdf8;
@@ -283,6 +288,12 @@
       -webkit-transform: translateY(-2px);
       transform: translateY(-2px);
       box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.4);
+    }
+
+    .choice-card:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      pointer-events: none;
     }
 
     .choice-card .choice-title {
@@ -330,7 +341,7 @@
         </button>
         <button type="button" class="choice-card" id="btnRelapse">
           <div class="choice-title">Relapse</div>
-          <div class="choice-fw">FW 7.00 &ndash; 13.60</div>
+          <div class="choice-fw">FW 7.00 &ndash; 13.60 (except 9.05, 11.40)</div>
           <div class="choice-desc">Requires an active network interface (Wi-Fi or Ethernet). Internet access is not required.</div>
         </button>
       </div>
@@ -344,7 +355,7 @@
 
   </main>
 
-  <footer id="footer">WebKit Autoloader Installer v0.5.1 by PLK (built 2026-09-30 00:44:35 UTC)<br />This project is free and open source: github.com/itsPLK/ps5-webkit-autoloader</footer>
+  <footer id="footer">WebKit Autoloader Installer v0.5.2 by PLK (built 2026-09-30 18:14:18 UTC)<br />This project is free and open source: github.com/itsPLK/ps5-webkit-autoloader</footer>
 
   <script>
     (function () {
@@ -374,15 +385,39 @@
         fwParam = params.get('fw') || '';
       })();
 
-      var POOPS_FIRMWARES = ["7.00", "7.01", "7.20", "7.40", "7.60", "7.61", "8.00", "8.20", "8.40", "8.60", "9.00", "9.05", "9.20", "9.40", "9.60", "10.00", "10.01", "10.20", "10.40", "10.60", "11.00", "11.20", "11.40", "11.60", "12.00"];
-      var RELAPSE_FIRMWARES = ["7.00", "7.01", "7.20", "7.40", "7.60", "7.61", "8.00", "8.20", "8.40", "8.60", "9.00", "9.20", "9.40", "9.60", "10.00", "10.01", "10.20", "10.40", "10.60", "11.00", "11.20", "11.60", "12.00", "12.02", "12.20", "12.40", "12.60", "12.70", "13.00", "13.20", "13.40", "13.42", "13.60"];
+      /* Firmware support definitions:
+         - <= 5.50: umtx2
+         - 7.00 - 12.00: poops
+         - 7.00 - 13.60 (except 9.05, 11.40): relapse */
+      function isUmtx2Supported(num) {
+        var n = typeof num === 'number' ? num : parseFloat(num);
+        return n > 0 && n <= 5.50;
+      }
+
+      function isPoopsSupported(num) {
+        var n = typeof num === 'number' ? num : parseFloat(num);
+        return n >= 7.00 && n <= 12.00;
+      }
+
+      function isRelapseSupported(num, str) {
+        var n = typeof num === 'number' ? num : parseFloat(num);
+        var s = str || (typeof num === 'string' ? num : '');
+        var isExcluded = (s === '9.05' || s === '11.40' ||
+                          Math.abs(n - 9.05) < 0.001 || Math.abs(n - 11.40) < 0.001);
+        return n >= 7.00 && n <= 13.60 && !isExcluded;
+      }
 
       var fw = detectFirmware();
       var fwStr = fw ? fw.str : fwParam;
       var fwNum = fw ? fw.num : (fwParam ? parseFloat(fwParam) : 0);
-      var hasPoops = fwStr ? (POOPS_FIRMWARES.indexOf(fwStr) !== -1) : (fwNum >= 7.00 && fwNum <= 12.00);
-      var hasRelapse = fwStr ? (RELAPSE_FIRMWARES.indexOf(fwStr) !== -1) : (fwNum >= 7.00 && fwNum <= 13.60);
+      var hasUmtx2 = isUmtx2Supported(fwNum);
+      var hasPoops = isPoopsSupported(fwNum);
+      var hasRelapse = isRelapseSupported(fwNum, fwStr);
+      var isUnsupported = fwNum > 0 && !hasUmtx2 && !hasPoops && !hasRelapse;
       var needsChoice = (hasPoops && hasRelapse) || (!fw && !fwParam);
+      var storedPref = '';
+      try { storedPref = localStorage.getItem('wkal_exploit'); } catch (e) { }
+      var defaultChoice = storedPref === 'poops' && (hasPoops || (!fw && !fwParam)) ? 'poops' : 'relapse';
 
       var CACHE_PAGES = {
         umtx2: '/umtx2_cache.html',
@@ -401,6 +436,8 @@
         var completed = false;
         var cacheError = false;
         var AUTOLOADER_URL = '/app/index.html';
+        var cacheMode = window.location.pathname === '/umtx2_cache.html' ? 'umtx2' :
+          window.location.pathname === '/slopkit_cache.html' ? 'poops' : 'relapse';
 
         function appendLog(msg) {
           logContainer.hidden = false;
@@ -413,7 +450,7 @@
         function goToAutoloader() {
           if (completed || cacheError) return;
           completed = true;
-          window.location.replace(AUTOLOADER_URL);
+          window.location.replace(AUTOLOADER_URL + '?force=' + cacheMode);
         }
 
         function cacheFailed() {
@@ -515,6 +552,10 @@
       }
 
       function chooseExploit(choice) {
+        if (btnPoops) btnPoops.disabled = true;
+        if (btnRelapse) btnRelapse.disabled = true;
+        statusEl.textContent = 'Selected ' + (choice === 'poops' ? 'Poops' : 'Relapse') + '...';
+        detailEl.textContent = 'Preparing cache download...';
         goToCache(choice);
       }
 
@@ -533,15 +574,22 @@
       function updateCountdown() {
         var remaining = Math.ceil((choiceDeadline - Date.now()) / 1000);
         if (remaining <= 0) {
-          goToCache('relapse');
+          goToCache(defaultChoice);
           return;
         }
-        progressPct.textContent = 'Using Relapse in ' + remaining +
-          ' second' + (remaining === 1 ? '' : 's') + '...';
+        progressPct.textContent = 'Using ' + (defaultChoice === 'poops' ? 'Poops' : 'Relapse') +
+          ' in ' + remaining + ' second' + (remaining === 1 ? '' : 's') + '...';
       }
 
       window.addEventListener('load', function () {
-        if (fwNum > 0 && fwNum <= 5.50) {
+        if (isUnsupported) {
+          statusEl.textContent = 'Unsupported firmware';
+          statusEl.style.color = '#ef4444';
+          var unsupportedFw = fw ? fw.str : fwParam;
+          detailEl.textContent = 'Firmware ' + unsupportedFw + ' is not supported (supported: 1.00–5.50 via umtx2, 7.00–12.00 via poops, 7.00–13.60 via relapse).';
+          return;
+        }
+        if (hasUmtx2) {
           goToCache('umtx2');
           return;
         }
@@ -566,7 +614,15 @@
         choiceDeadline = Date.now() + CHOICE_DELAY_MS;
         updateCountdown();
         choiceTimer = setInterval(updateCountdown, 250);
-        if (btnPoops) btnPoops.focus();
+        if (defaultChoice === 'poops' && btnPoops) {
+          btnPoops.classList.add('selected');
+          btnPoops.focus();
+        } else if (storedPref === 'relapse' && btnRelapse) {
+          btnRelapse.classList.add('selected');
+          btnRelapse.focus();
+        } else if (btnPoops) {
+          btnPoops.focus();
+        }
       });
     })();
   </script>
