@@ -13,6 +13,14 @@
 #define USB_DEBUG 0
 #endif
 
+#if USB_DEBUG
+#include "esp_log.h"
+#include "esp_heap_caps.h"
+#include <stdarg.h>
+#include <sys/socket.h>
+#include <errno.h>
+#endif
+
 #if !USB_DEBUG && (CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3)
 #include "soc/soc.h"
 #include "soc/usb_serial_jtag_reg.h"
@@ -27,6 +35,103 @@ static const uint32_t LED_ACTIVITY_MS = 50;
 static uint32_t ledOffUntil = 0;
 #endif
 
+#if USB_DEBUG
+// IDF errors normally go to UART0, which is not the S2 USB CDC debug port.
+static int tlsDebugVprintf(const char *format, va_list args)
+{
+    char buffer[256];
+    int length = vsnprintf(buffer, sizeof(buffer), format, args);
+    if (length <= 0)
+        return length;
+    size_t outputLength = length < (int)sizeof(buffer) ? (size_t)length : sizeof(buffer) - 1;
+    return (int)Serial.write((const uint8_t *)buffer, outputLength);
+}
+
+static void logTlsMemory(const char *stage)
+{
+    Serial.printf("[TLS] %s: free=%u largest_internal=%u\n", stage,
+                  ESP.getFreeHeap(),
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+}
+
+static void httpsSessionCreated(esp_https_server_user_cb_arg_t *event)
+{
+    Serial.printf("[TLS] handshake OK: fd=%d\n", event->tls->sockfd);
+    logTlsMemory("after handshake");
+}
+
+// Peek at the unencrypted ClientHello; TLS still receives the original bytes.
+static const char *clientHelloSni(const uint8_t *data, size_t size,
+                                  char *host, size_t hostSize)
+{
+    if (size < 5) return "incomplete";
+    if (data[0] != 22) return "not ClientHello";
+    size_t recordEnd = 5 + (((size_t)data[3] << 8) | data[4]);
+    if (recordEnd > size) return "incomplete";
+    if (recordEnd < 9 || data[5] != 1) return "not ClientHello";
+    size_t helloEnd = 9 + (((size_t)data[6] << 16) | ((size_t)data[7] << 8) | data[8]);
+    if (helloEnd > recordEnd) return "incomplete";
+    size_t pos = 9 + 2 + 32; // version and random
+    if (pos >= helloEnd) return "malformed";
+    pos += 1 + data[pos]; // session ID
+    if (pos + 2 > helloEnd) return "malformed";
+    pos += 2 + (((size_t)data[pos] << 8) | data[pos + 1]); // cipher suites
+    if (pos >= helloEnd) return "malformed";
+    pos += 1 + data[pos]; // compression methods
+    if (pos + 2 > helloEnd) return "no SNI";
+    size_t extensionsEnd = pos + 2 + (((size_t)data[pos] << 8) | data[pos + 1]);
+    pos += 2;
+    if (extensionsEnd > helloEnd) return "malformed";
+    while (pos + 4 <= extensionsEnd) {
+        uint16_t type = ((uint16_t)data[pos] << 8) | data[pos + 1];
+        size_t end = pos + 4 + (((size_t)data[pos + 2] << 8) | data[pos + 3]);
+        if (end > extensionsEnd) return "malformed";
+        if (type == 0) {
+            size_t name = pos + 6;
+            if (name + 3 > end || data[name] != 0) return "malformed SNI";
+            size_t length = ((size_t)data[name + 1] << 8) | data[name + 2];
+            name += 3;
+            if (!length || name + length > end || length >= hostSize) return "malformed SNI";
+            memcpy(host, data + name, length);
+            host[length] = 0;
+            return host;
+        }
+        pos = end;
+    }
+    return "no SNI";
+}
+
+static __attribute__((noinline)) const char *probeClientHelloSni(int sockfd, char *host, size_t hostSize)
+{
+    uint8_t hello[3072];
+    const char *sni = "unavailable";
+    for (int attempt = 0; attempt < 10; ++attempt) {
+        int size = recv(sockfd, hello, sizeof(hello), MSG_PEEK | MSG_DONTWAIT);
+        if (size > 0) {
+            sni = clientHelloSni(hello, (size_t)size, host, hostSize);
+            if (strcmp(sni, "incomplete") != 0) break;
+        } else if (size == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
+            sni = "socket closed";
+            break;
+        }
+        delay(10);
+    }
+    return sni;
+}
+
+extern "C" int __real_esp_tls_server_session_create(esp_tls_cfg_server_t *, int, esp_tls_t *);
+extern "C" int __wrap_esp_tls_server_session_create(esp_tls_cfg_server_t *cfg,
+                                                      int sockfd, esp_tls_t *tls)
+{
+    char host[256];
+    const char *sni = probeClientHelloSni(sockfd, host, sizeof(host));
+    Serial.printf("[TLS] ClientHello fd=%d sni=%s\n", sockfd, sni);
+    int result = __real_esp_tls_server_session_create(cfg, sockfd, tls);
+    Serial.printf("[TLS] handshake fd=%d sni=%s result=%d\n", sockfd, sni, result);
+    return result;
+}
+#endif
+
 httpd_handle_t httpsServer = NULL;
 
 static const char *AP_SSID = "ESP32_PORTAL";
@@ -39,6 +144,14 @@ static const char *PAYLOAD_LOCAL_PREFIX = "/pldmrr/";
 static const IPAddress AP_IP(192, 168, 4, 1);
 static const IPAddress AP_GATEWAY(192, 168, 4, 1);
 static const IPAddress AP_SUBNET(255, 255, 255, 0);
+
+// Keep the portal, PS5 connectivity test, and Windows connectivity test local.
+bool portalDnsAllowed(const String &domain)
+{
+    return domain == "manuals.playstation.net" ||
+           domain == "ena.net.playstation.net" ||
+           domain == "www.msftconnecttest.com";
+}
 
 DNSServer dnsServer;
 WebServer webServer(80);
@@ -402,6 +515,10 @@ static esp_err_t httpsNetworkTestHandler(httpd_req_t *req)
 bool setupHttpsServer()
 {
     httpd_ssl_config_t config = HTTPD_SSL_CONFIG_DEFAULT();
+#if USB_DEBUG
+    config.user_cb = httpsSessionCreated;
+    logTlsMemory("before HTTPS start");
+#endif
 
     config.transport_mode = HTTPD_SSL_TRANSPORT_SECURE;
     config.port_secure = 443;
@@ -437,6 +554,9 @@ bool setupHttpsServer()
     );
 
     if (err != ESP_OK) {
+#if USB_DEBUG
+        logTlsMemory("HTTPS start failed");
+#endif
         Serial.printf(
             "HTTPS start failed: %s\n",
             esp_err_to_name(err)
@@ -446,6 +566,9 @@ bool setupHttpsServer()
     }
 
     Serial.println("HTTPS socket started");
+#if USB_DEBUG
+    logTlsMemory("HTTPS listening");
+#endif
 
     httpd_uri_t netstart_uri = {
         .uri       = "/netstart/icst",
@@ -755,6 +878,9 @@ void setup()
     Serial.begin(115200);
 
     delay(1000);
+#if USB_DEBUG
+    esp_log_set_vprintf(tlsDebugVprintf);
+#endif
     
     Serial.printf(
         "Arduino ESP32: %d.%d.%d\n",
@@ -835,7 +961,7 @@ void setup()
     Serial.println("Starting DNS");
 
     dnsServer.setTTL(30);
-    dnsServer.setErrorReplyCode(DNSReplyCode::ServerFailure);
+    dnsServer.setErrorReplyCode(DNSReplyCode::NonExistentDomain);
     bool dnsResult =
         dnsServer.start(
             53,

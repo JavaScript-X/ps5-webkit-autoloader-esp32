@@ -44,15 +44,15 @@ Install the Arduino CLI and required core:
 make
 ```
 
-The default ESP32-S2/S3/C3/PICO firmware leaves native USB disconnected, so the
-board only draws power from its USB connection. Build the separate debug
-variant to enable USB CDC/Serial-JTAG output:
+The default ESP32-S2/S3/C3/PICO firmware leaves native USB disconnected, so the board only draws power from its USB connection. Build the separate debug variant to enable USB CDC/Serial-JTAG output:
 
 ```sh
 make debug
 ```
 
-Debug firmware is written to `build/debug/`.
+Debug firmware is written to `build/debug/`. For the ESP32-S2 alone, use `make debug-s2`. To timestamp every serial line from 00:00:00, run `python serial_timestamp.py COM4 115200` (requires pyserial).
+
+DNS resolves `manuals.playstation.net`, `ena.net.playstation.net` and `www.msftconnecttest.com` to the ESP32; other names receive NXDOMAIN. The build creates a modified copy of Arduino ESP32 2.0.11's DNSServer under ignored `build/` using `prepare-dns-library.py`. That library retains its [upstream LGPL-2.1 license](https://github.com/espressif/arduino-esp32/blob/2.0.11/LICENSE.md).
 
 The build copies `autoloader/` to a temporary `data/` directory, compresses the web assets, and creates:
 

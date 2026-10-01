@@ -37,6 +37,9 @@ ESP8266_ROOT := $(ARDUINO_DATA_DIR)/packages/esp8266
 ARDUINO_CLI := arduino-cli --config-file $(ARDUINO_CONFIG)
 CORE_VERSION := 2.0.11
 CORE_DIR := $(ARDUINO_ROOT)/hardware/esp32/$(CORE_VERSION)
+DNS_LIBRARY := $(BUILD_DIR)/dns-library
+DNS_LIBRARY_STAMP := $(DNS_LIBRARY)/.ready
+DNS_LIBRARY_ARG := --library "$(DNS_LIBRARY)"
 ESP8266_CORE_VERSION ?= 3.1.2
 ESP8266_CORE_DIR := $(ESP8266_ROOT)/hardware/esp8266/$(ESP8266_CORE_VERSION)
 ESPTOOL := $(ARDUINO_ROOT)/tools/esptool_py/4.5.1/esptool.py
@@ -57,6 +60,9 @@ S3_USB_OPTIONS := USBMode=default,CDCOnBoot=default
 C3_USB_OPTIONS := CDCOnBoot=default
 endif
 USB_DEBUG_FLAG := -DUSB_DEBUG=$(USB_DEBUG)
+ifeq ($(USB_DEBUG),1)
+S2_TLS_DEBUG_LINK := --build-property "compiler.c.elf.extra_flags=-Wl,--wrap=esp_tls_server_session_create"
+endif
 PICO_FQBN := esp32:esp32:esp32:CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=verbose,PSRAM=disabled
 S2_FQBN := esp32:esp32:esp32s2:$(S2_USB_OPTIONS),MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashFreq=40,FlashMode=dio,FlashSize=4M,DebugLevel=verbose,PSRAM=disabled
 S3_FQBN := esp32:esp32:esp32s3:$(S3_USB_OPTIONS),MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=dio,FlashSize=4M,DebugLevel=verbose,PSRAM=disabled
@@ -102,7 +108,7 @@ ESP8266_FLASH_SIZE := 4194304
 ESP8266_LITTLEFS_SIZE := 0x2FA000
 ESP8266_LITTLEFS_OFFSET := 0x100000
 
-.PHONY: all debug pico pico-8m s2 s3 c3 8266 littlefs datadir minimize check check-minimize check-data check-littlefs check-8266 clean FORCE
+.PHONY: all debug debug-s2 pico pico-8m s2 s3 c3 8266 littlefs datadir minimize check check-minimize check-data check-littlefs check-8266 clean FORCE
 
 all: check $(PICO_MERGED) $(S2_MERGED) $(S3_MERGED) $(C3_MERGED)
 	@echo
@@ -111,6 +117,9 @@ all: check $(PICO_MERGED) $(S2_MERGED) $(S3_MERGED) $(C3_MERGED)
 
 debug:
 	@$(MAKE) USB_DEBUG=1 BUILD_DIR="$(PROJECT_DIR)/build/debug" all
+
+debug-s2:
+	@$(MAKE) USB_DEBUG=1 BUILD_DIR="$(PROJECT_DIR)/build/debug" s2
 
 pico: check $(PICO_MERGED)
 	@ls -lh "$(PICO_MERGED)"
@@ -206,12 +215,16 @@ $(SERVER_CERT) $(SERVER_KEY) &:
 $(SERVER_HEADER): $(SERVER_CERT) $(SERVER_KEY) $(CERT_EMBEDDER)
 	@python3 "$(CERT_EMBEDDER)" "$(SERVER_CERT)" "$(SERVER_KEY)" "$(SERVER_HEADER)"
 
-$(PICO_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/partitions.csv Makefile
+$(DNS_LIBRARY_STAMP): $(CORE_DIR)/libraries/DNSServer/src/DNSServer.cpp $(CORE_DIR)/libraries/DNSServer/src/DNSServer.h $(PROJECT_DIR)/prepare-dns-library.py Makefile
+	@python3 "$(PROJECT_DIR)/prepare-dns-library.py" "$(CORE_DIR)/libraries/DNSServer" "$(DNS_LIBRARY)"
+
+$(PICO_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/partitions.csv Makefile $(DNS_LIBRARY_STAMP)
 	@rm -rf "$(PICO_SKETCH_DIR)"
 	mkdir -p "$(PICO_SKETCH_DIR)"
 	cp "$(PROJECT_DIR)/$(PROJECT_NAME).ino" "$(SERVER_HEADER)" "$(PICO_SKETCH_DIR)/"
 	cp "$(PROJECT_DIR)/partitions.csv" "$(PICO_SKETCH_DIR)/"
 	$(ARDUINO_CLI) compile \
+	    $(DNS_LIBRARY_ARG) \
 	    --fqbn "$(PICO_FQBN)" \
 	    --build-property "compiler.cpp.extra_flags=-DLED_PIN=10 -DLED_ON_LEVEL=HIGH" \
 	    --output-dir "$(PICO_BUILD_DIR)" \
@@ -221,14 +234,16 @@ $(PICO_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/
 	size=$$(stat -c %s "$(PICO_APP)")
 	test "$$size" -le "$(APP_PARTITION_SIZE)" || { echo "Error: Pico application exceeds the 1 MB partition: $$size bytes" >&2; exit 1; }
 
-$(S2_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/partitions.csv Makefile
+$(S2_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/partitions.csv Makefile $(DNS_LIBRARY_STAMP)
 	@rm -rf "$(S2_SKETCH_DIR)"
 	mkdir -p "$(S2_SKETCH_DIR)"
 	cp "$(PROJECT_DIR)/$(PROJECT_NAME).ino" "$(SERVER_HEADER)" "$(S2_SKETCH_DIR)/"
 	cp "$(PROJECT_DIR)/partitions.csv" "$(S2_SKETCH_DIR)/"
 	$(ARDUINO_CLI) compile \
+	    $(DNS_LIBRARY_ARG) \
 	    --fqbn "$(S2_FQBN)" \
 	    --build-property "compiler.cpp.extra_flags=-DLED_PIN=17 $(USB_DEBUG_FLAG)" \
+	    $(S2_TLS_DEBUG_LINK) \
 	    --output-dir "$(S2_BUILD_DIR)" \
 	    --build-property "build.partitions=partitions" \
 	    --build-property "build.filesystem=littlefs" \
@@ -236,12 +251,13 @@ $(S2_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/pa
 	size=$$(stat -c %s "$(S2_APP)")
 	test "$$size" -le "$(APP_PARTITION_SIZE)" || { echo "Error: S2 application exceeds the 1 MB partition: $$size bytes" >&2; exit 1; }
 
-$(S3_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/partitions.csv Makefile
+$(S3_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/partitions.csv Makefile $(DNS_LIBRARY_STAMP)
 	@rm -rf "$(S3_SKETCH_DIR)"
 	mkdir -p "$(S3_SKETCH_DIR)"
 	cp "$(PROJECT_DIR)/$(PROJECT_NAME).ino" "$(SERVER_HEADER)" "$(S3_SKETCH_DIR)/"
 	cp "$(PROJECT_DIR)/partitions.csv" "$(S3_SKETCH_DIR)/"
 	$(ARDUINO_CLI) compile \
+	    $(DNS_LIBRARY_ARG) \
 	    --fqbn "$(S3_FQBN)" \
 	    --build-property "compiler.cpp.extra_flags=$(USB_DEBUG_FLAG)" \
 	    --output-dir "$(S3_BUILD_DIR)" \
@@ -251,12 +267,13 @@ $(S3_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/pa
 	size=$$(stat -c %s "$(S3_APP)")
 	test "$$size" -le "$(APP_PARTITION_SIZE)" || { echo "Error: S3 application exceeds the 1 MB partition: $$size bytes" >&2; exit 1; }
 
-$(PICO_8M_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/partitions-8m.csv Makefile
+$(PICO_8M_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/partitions-8m.csv Makefile $(DNS_LIBRARY_STAMP)
 	@rm -rf "$(PICO_8M_SKETCH_DIR)" "$(PICO_8M_OUTPUT_DIR)"
 	mkdir -p "$(PICO_8M_SKETCH_DIR)" "$(PICO_8M_OUTPUT_DIR)"
 	cp "$(PROJECT_DIR)/$(PROJECT_NAME).ino" "$(SERVER_HEADER)" "$(PICO_8M_SKETCH_DIR)/"
 	cp "$(PROJECT_DIR)/partitions-8m.csv" "$(PICO_8M_SKETCH_DIR)/partitions.csv"
 	$(ARDUINO_CLI) compile \
+	    $(DNS_LIBRARY_ARG) \
 	    --fqbn "$(PICO_8M_FQBN)" \
 	    --build-property "compiler.cpp.extra_flags=-DLED_PIN=10" \
 	    --output-dir "$(PICO_8M_OUTPUT_DIR)" \
@@ -266,12 +283,13 @@ $(PICO_8M_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DI
 	size=$$(stat -c %s "$(PICO_8M_APP)")
 	test "$$size" -le "$(PICO_8M_APP_PARTITION_SIZE)" || { echo "Error: Pico 8 MB application exceeds the 1.5 MB partition: $$size bytes" >&2; exit 1; }
 
-$(C3_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/partitions.csv Makefile
+$(C3_APP): $(PROJECT_DIR)/$(PROJECT_NAME).ino $(SERVER_HEADER) $(PROJECT_DIR)/partitions.csv Makefile $(DNS_LIBRARY_STAMP)
 	@rm -rf "$(C3_SKETCH_DIR)"
 	mkdir -p "$(C3_SKETCH_DIR)"
 	cp "$(PROJECT_DIR)/$(PROJECT_NAME).ino" "$(SERVER_HEADER)" "$(C3_SKETCH_DIR)/"
 	cp "$(PROJECT_DIR)/partitions.csv" "$(C3_SKETCH_DIR)/"
 	$(ARDUINO_CLI) compile \
+	    $(DNS_LIBRARY_ARG) \
 	    --fqbn "$(C3_FQBN)" \
 	    --build-property "compiler.cpp.extra_flags=$(USB_DEBUG_FLAG)" \
 	    --output-dir "$(C3_BUILD_DIR)" \
