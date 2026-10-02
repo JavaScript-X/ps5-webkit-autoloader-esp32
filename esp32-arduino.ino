@@ -126,8 +126,11 @@ extern "C" int __wrap_esp_tls_server_session_create(esp_tls_cfg_server_t *cfg,
     char host[256];
     const char *sni = probeClientHelloSni(sockfd, host, sizeof(host));
     Serial.printf("[TLS] ClientHello fd=%d sni=%s\n", sockfd, sni);
+    logTlsMemory("before handshake");
     int result = __real_esp_tls_server_session_create(cfg, sockfd, tls);
     Serial.printf("[TLS] handshake fd=%d sni=%s result=%d\n", sockfd, sni, result);
+    if (result != 0)
+        logTlsMemory("handshake failed");
     return result;
 }
 #endif
@@ -356,7 +359,10 @@ esp_err_t httpsFileHandler(httpd_req_t *req)
 
             httpd_resp_set_status(req, "302 Found");
             httpd_resp_set_hdr(req, "Location", PORTAL_REDIRECT_URL);
+            httpd_resp_set_hdr(req, "Connection", "close");
             httpd_resp_send(req, nullptr, 0);
+            // The redirect is complete; release the TLS session immediately.
+            return ESP_FAIL;
         }
         else
         {
