@@ -10,7 +10,7 @@ The web content in `autoloader/` is based on a modified version of the [`ps5-web
 - poops        7.00 - 12.00
 - relapse        7.00 - 13.60   (except 9.05 and 11.40)
 
-You could choose to use poops or relapse if your FW supports both methods while caching. It would use Relapse by default if you don't choose.
+You could choose to use poops or relapse if your FW supports both methods while caching. It would use Poops by default if you don't choose.
 
 ## Usage
 

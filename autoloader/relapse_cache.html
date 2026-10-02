@@ -418,6 +418,7 @@
       var storedPref = '';
       try { storedPref = localStorage.getItem('wkal_exploit'); } catch (e) { }
       var defaultChoice = storedPref === 'poops' && (hasPoops || (!fw && !fwParam)) ? 'poops' : 'relapse';
+      if (hasPoops && hasRelapse && storedPref !== 'relapse') defaultChoice = 'poops';
 
       var CACHE_PAGES = {
         umtx2: '/umtx2_cache.html',
