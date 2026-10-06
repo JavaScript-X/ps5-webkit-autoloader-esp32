@@ -1,0 +1,10 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+COPY install-deps.sh /tmp/install-deps.sh
+RUN sed -i 's/\r$//' /tmp/install-deps.sh && bash /tmp/install-deps.sh
+
+WORKDIR /workspace
+CMD ["bash", "-lc", "make -C mklittlefs && make d1-mini"]

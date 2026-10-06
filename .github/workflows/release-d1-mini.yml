@@ -1,0 +1,46 @@
+name: Release AZ-Delivery ESP32 D1 Mini firmware
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: ./install-deps.sh
+
+      - name: Build LittleFS image tool
+        run: make -C mklittlefs
+
+      - name: Build AZ-Delivery ESP32 D1 Mini firmware
+        run: make d1-mini
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          cp build/d1-mini/ps5-webkit-autoloader.az-delivery-d1-mini-esp32.merged.bin release/
+          cd release
+          sha256sum *.bin > SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: az-delivery-d1-mini-esp32-firmware
+          path: release/
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release/*
