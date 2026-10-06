@@ -2,7 +2,9 @@
 
 A compact HTTP/HTTPS host for the PS5 WebKit Autoloader, packaged as 4 MB flash images for ESP32-PICO, ESP32-S2, ESP32-S3 and ESP32-C3 boards. This fork adds a dedicated image for the **AZ-Delivery ESP32 D1 Mini with an ESP32-WROOM-32 module**. All targets use LittleFS and do not require PSRAM.
 
-The AZ-Delivery D1 Mini port is maintained by [JavaScript-X](https://github.com/JavaScript-X).
+The AZ-Delivery D1 Mini port is maintained and hardware-tested by [JavaScript-X](https://github.com/JavaScript-X).
+
+**Confirmed working:** the release image has been flashed successfully to an AZ-Delivery ESP32 D1 Mini with an ESP32-WROOM-32 module (ESP32-D0WD-V3 revision 3.1). The board boots, creates the `ESP32_PORTAL` Wi-Fi network, and serves the autoloader interface at `http://192.168.4.1/`.
 
 The web content in `autoloader/` is based on a modified version of the [`ps5-webkit-autoloader`](https://github.com/itsPLK/ps5-webkit-autoloader) frontend. Its bundled [`slopkit`](https://github.com/itsPLK/slopkit), [`umtx2`](https://github.com/idlesauce/umtx2) and [`ps5-unified-autoloader`](https://github.com/owendswang/ps5-unified-autoloader/tree/feat/install-webkit-shortcut) components also contain project-specific modifications and therefore do not exactly match upstream.
 
@@ -81,7 +83,7 @@ python -m esptool --chip esp32 --port COM4 --baud 460800 erase_flash
 python -m esptool --chip esp32 --port COM4 --baud 460800 write_flash 0x0 ps5-webkit-autoloader.az-delivery-d1-mini-esp32.merged.bin
 ```
 
-The image is built for the original ESP32 chip, 4 MB flash, DIO mode at 40 MHz, and no PSRAM. If automatic reset does not enter download mode, hold **BOOT**, tap **RESET**, start flashing, and then release **BOOT**. Hardware validation is still required on the exact AZ-Delivery board revision.
+The image is built for the original ESP32 chip, 4 MB flash, DIO mode at 40 MHz, and no PSRAM. If automatic reset does not enter download mode, hold **BOOT**, tap **RESET**, start flashing, and then release **BOOT**. This configuration has been tested successfully on the AZ-Delivery ESP32 D1 Mini described above.
 
 ## Credits
 
